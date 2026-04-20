@@ -5,13 +5,11 @@ import numpy as np
 
 st.set_page_config(page_title="PharmaSight Agent", layout="wide", page_icon="💊")
 
-# ── HIDE PLOTLY TOOLBAR & STREAMLIT DEFAULTS ──
+# ── STYLING ──
 st.markdown("""
 <style>
-    /* Clean metric styling */
     [data-testid="stMetricValue"] { font-size: 2rem; }
     [data-testid="stMetricLabel"] { font-size: 0.85rem; }
-    /* Subtle divider */
     hr { margin: 1.5rem 0; border-color: #e5e7eb; }
 </style>
 """, unsafe_allow_html=True)
@@ -24,7 +22,6 @@ def load_data():
     interventions = pd.read_csv("intervention_recommendations.csv")
     gaps = pd.read_csv("member_gap_analysis.csv")
     
-    # Clean member IDs to short readable format
     unique_ids = sorted(member["BENE_ID"].unique())
     id_map = {old: f"MBR-{str(i+1).zfill(4)}" for i, old in enumerate(unique_ids)}
     member["MEMBER_ID"] = member["BENE_ID"].map(id_map)
@@ -47,10 +44,26 @@ view = st.sidebar.radio("", [
 st.sidebar.markdown("---")
 st.sidebar.caption("Built on CMS SynPUF 2025 synthetic Medicare data.  \nAdherence metric: PDC (Proportion of Days Covered) — the CMS Star Rating standard.")
 
-# ── ALTAIR THEME ──
-RISK_PALETTE = {"High": "#ef4444", "Medium": "#f59e0b", "Low": "#22c55e"}
-THERAPY_PALETTE = {"Cardiovascular": "#3b82f6", "Diabetes": "#ef4444",
-                   "Mental_Health": "#a855f7", "Respiratory": "#f59e0b"}
+# ── SUBTLE COLOR PALETTE ──
+# Risk tiers: soft coral, warm sand, calm slate blue
+RISK_COLORS = {"High": "#e07a5f", "Medium": "#f2b56b", "Low": "#6fa8c7"}
+RISK_DOMAIN = ["High", "Medium", "Low"]
+RISK_RANGE = ["#e07a5f", "#f2b56b", "#6fa8c7"]
+
+# Therapy classes: muted tones
+THERAPY_PALETTE = {
+    "Cardiovascular": "#5b8fb9", "Diabetes": "#e07a5f",
+    "Mental_Health": "#9b8ec4", "Respiratory": "#e8a838"
+}
+
+# Urgency: soft red, warm amber, calm blue
+URGENCY_COLORS = {"Critical": "#d45d5d", "Urgent": "#e8a838", "Elevated": "#5b8fb9"}
+
+# Gap severity: graduated warm tones
+GAP_COLORS = ["#6fa8c7", "#e8a838", "#e07a5f", "#b5423a"]
+
+# Polypharmacy
+POLY_COLORS = ["#5b8fb9", "#e07a5f"]
 
 # ══════════════════════════════════════════════════════════════
 # VIEW 1: POPULATION OVERVIEW
@@ -58,13 +71,12 @@ THERAPY_PALETTE = {"Cardiovascular": "#3b82f6", "Diabetes": "#ef4444",
 if view == "Population Overview":
     st.title("Population Overview")
     st.markdown("A snapshot of the chronic disease cohort — who they are, how many are at risk, and why polypharmacy matters.")
-    
+
     st.markdown("---")
 
-    # KPI row — 4 distinct metrics
     non_adh = member[member["risk_tier"].isin(["High", "Medium"])]
     total_fills = int(pdc["fill_count"].sum())
-    
+
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Members", f"{len(member):,}")
     col2.metric("Total Rx Fills (2022)", f"{total_fills:,}")
@@ -80,25 +92,30 @@ if view == "Population Overview":
 
     tier_data = member["risk_tier"].value_counts().reset_index()
     tier_data.columns = ["Risk Tier", "Members"]
-    tier_data["Risk Tier"] = pd.Categorical(tier_data["Risk Tier"], categories=["High", "Medium", "Low"], ordered=True)
+    tier_data["Risk Tier"] = pd.Categorical(tier_data["Risk Tier"], categories=RISK_DOMAIN, ordered=True)
     tier_data = tier_data.sort_values("Risk Tier")
+    tier_data["Percentage"] = (tier_data["Members"] / tier_data["Members"].sum() * 100).round(1)
+    tier_data["Label"] = tier_data.apply(lambda r: f"{r['Risk Tier']}: {r['Members']} ({r['Percentage']}%)", axis=1)
 
-    chart = alt.Chart(tier_data).mark_arc(innerRadius=60, outerRadius=130).encode(
-        theta=alt.Theta("Members:Q"),
-        color=alt.Color("Risk Tier:N", scale=alt.Scale(
-            domain=["High", "Medium", "Low"],
-            range=["#ef4444", "#f59e0b", "#22c55e"]
-        ), legend=alt.Legend(orient="right")),
-        tooltip=["Risk Tier", "Members"]
-    ).properties(height=300)
-    
-    text = alt.Chart(tier_data).mark_text(radiusOffset=20, size=14, fontWeight="bold").encode(
-        theta=alt.Theta("Members:Q", stack=True),
-        text=alt.Text("Members:Q"),
-        color=alt.value("#333333")
+    # Horizontal stacked bar instead of pie — cleaner, no blurry text
+    chart = alt.Chart(tier_data).mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4).encode(
+        x=alt.X("Members:Q", title="Members", stack="zero"),
+        color=alt.Color("Risk Tier:N", scale=alt.Scale(domain=RISK_DOMAIN, range=RISK_RANGE),
+                        legend=alt.Legend(orient="bottom", title=None)),
+        tooltip=["Risk Tier", "Members", "Percentage"]
+    ).properties(height=80)
+
+    text = alt.Chart(tier_data).mark_text(dx=0, color="white", fontSize=13, fontWeight="bold").encode(
+        x=alt.X("mid:Q"),
+        text=alt.Text("Label:N")
+    ).transform_window(
+        cumulative="sum(Members)",
+        sort=[{"field": "Risk Tier"}]
+    ).transform_calculate(
+        mid="datum.cumulative - datum.Members / 2"
     )
-    
-    st.altair_chart(chart + text, use_container_width=True)
+
+    st.altair_chart(chart, use_container_width=True)
 
     st.markdown("---")
     st.subheader("Polypharmacy Risk")
@@ -121,7 +138,7 @@ if view == "Population Overview":
         y=alt.Y("Hospitalization Rate:Q", title="% Hospitalized", scale=alt.Scale(domain=[0, 50])),
         color=alt.Color("Group:N", scale=alt.Scale(
             domain=["Single Therapy", "Multi-Therapy (2+)"],
-            range=["#3b82f6", "#ef4444"]
+            range=POLY_COLORS
         ), legend=None),
         tooltip=["Group", "Hospitalization Rate", "Members"]
     ).properties(height=300)
@@ -152,7 +169,7 @@ elif view == "Adherence Deep Dive":
     st.markdown("---")
     st.subheader("PDC Distribution")
     st.markdown("The bimodal pattern is typical — members are either highly adherent or severely non-adherent. "
-                "The red dashed line marks the **80% CMS threshold**.")
+                "The dashed line marks the **80% CMS threshold**.")
 
     pdc_hist = pdc.copy()
     pdc_hist["pdc_bin"] = pd.cut(pdc_hist["pdc"], bins=range(0, 105, 5), right=False)
@@ -160,7 +177,7 @@ elif view == "Adherence Deep Dive":
     pdc_hist["bin_start"] = pdc_hist["pdc_bin"].apply(lambda x: int(x.left) if pd.notna(x) else 0)
     bin_counts = pdc_hist.groupby(["bin_label", "bin_start"]).size().reset_index(name="count")
 
-    bars = alt.Chart(bin_counts).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#3b82f6").encode(
+    bars = alt.Chart(bin_counts).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#5b8fb9").encode(
         x=alt.X("bin_start:Q", title="PDC (%)", scale=alt.Scale(domain=[0, 100]),
                 axis=alt.Axis(values=list(range(0, 101, 10)))),
         y=alt.Y("count:Q", title="Members"),
@@ -168,11 +185,11 @@ elif view == "Adherence Deep Dive":
     ).properties(height=300)
 
     rule = alt.Chart(pd.DataFrame({"x": [80]})).mark_rule(
-        strokeDash=[6, 4], color="#ef4444", strokeWidth=2
+        strokeDash=[6, 4], color="#d45d5d", strokeWidth=2
     ).encode(x="x:Q")
 
     label = alt.Chart(pd.DataFrame({"x": [81], "y": [bin_counts["count"].max() * 0.9], "text": ["80% Threshold"]})).mark_text(
-        align="left", color="#ef4444", fontSize=12, fontWeight="bold"
+        align="left", color="#d45d5d", fontSize=12, fontWeight="bold"
     ).encode(x="x:Q", y="y:Q", text="text:N")
 
     st.altair_chart(bars + rule + label, use_container_width=True)
@@ -224,7 +241,7 @@ elif view == "Adherence Deep Dive":
             y=alt.Y("Members:Q", title="Members"),
             color=alt.Color("Gap Duration:N", scale=alt.Scale(
                 domain=["< 30 days", "30–60 days", "60–90 days", "> 90 days"],
-                range=["#22c55e", "#f59e0b", "#ef4444", "#991b1b"]
+                range=GAP_COLORS
             ), legend=None),
             tooltip=["Gap Duration", "Members"]
         ).properties(height=280)
@@ -260,7 +277,6 @@ elif view == "Risk & Cost Impact":
     cost_data = []
     for tier in ["High", "Medium", "Low"]:
         subset = member[member["risk_tier"] == tier]
-        hospitalized = subset[subset["admission_count"] > 0]
         cost_data.append({
             "Risk Tier": tier,
             "Cost per Member": round(subset["total_hosp_cost"].sum() / len(subset)),
@@ -275,9 +291,7 @@ elif view == "Risk & Cost Impact":
         chart = alt.Chart(cost_df).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=60).encode(
             x=alt.X("Risk Tier:N", sort=["High", "Medium", "Low"], axis=alt.Axis(labelAngle=0, title=None)),
             y=alt.Y("Cost per Member:Q", title="Cost per Member ($)"),
-            color=alt.Color("Risk Tier:N", scale=alt.Scale(
-                domain=["High", "Medium", "Low"], range=["#ef4444", "#f59e0b", "#22c55e"]
-            ), legend=None),
+            color=alt.Color("Risk Tier:N", scale=alt.Scale(domain=RISK_DOMAIN, range=RISK_RANGE), legend=None),
             tooltip=["Risk Tier", "Cost per Member", "Members"]
         ).properties(height=320, title="Per-Member Hospitalization Cost")
 
@@ -290,9 +304,7 @@ elif view == "Risk & Cost Impact":
         chart = alt.Chart(cost_df).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=60).encode(
             x=alt.X("Risk Tier:N", sort=["High", "Medium", "Low"], axis=alt.Axis(labelAngle=0, title=None)),
             y=alt.Y("Hospitalization Rate:Q", title="% Hospitalized"),
-            color=alt.Color("Risk Tier:N", scale=alt.Scale(
-                domain=["High", "Medium", "Low"], range=["#ef4444", "#f59e0b", "#22c55e"]
-            ), legend=None),
+            color=alt.Color("Risk Tier:N", scale=alt.Scale(domain=RISK_DOMAIN, range=RISK_RANGE), legend=None),
             tooltip=["Risk Tier", "Hospitalization Rate", "Members"]
         ).properties(height=320, title="Hospitalization Rate")
 
@@ -348,37 +360,31 @@ elif view == "Intervention Queue":
     if len(filtered) == 0:
         st.info("No members match the selected filters. Try expanding the filters above.")
     else:
-        # Urgency breakdown
+        # Urgency breakdown — horizontal stacked bar instead of pie
         st.subheader("Urgency Breakdown")
-        st.markdown("**Critical** = hospitalized + non-adherent (needs immediate pharmacist outreach). "
+        st.markdown("**Critical** = hospitalized + non-adherent (immediate pharmacist outreach). "
                     "**Urgent** = PDC below 50% (medication therapy management). "
                     "**Elevated** = PDC 50–79% (automated reminders + 90-day supply conversion).")
 
         urg_data = filtered["urgency"].value_counts().reset_index()
         urg_data.columns = ["Urgency", "Members"]
+        urg_data["Percentage"] = (urg_data["Members"] / urg_data["Members"].sum() * 100).round(1)
 
-        chart = alt.Chart(urg_data).mark_arc(innerRadius=60, outerRadius=120).encode(
-            theta=alt.Theta("Members:Q"),
+        chart = alt.Chart(urg_data).mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4).encode(
+            x=alt.X("Members:Q", title="Members", stack="zero"),
             color=alt.Color("Urgency:N", scale=alt.Scale(
                 domain=["Critical", "Urgent", "Elevated"],
-                range=["#ef4444", "#f59e0b", "#3b82f6"]
-            ), legend=alt.Legend(orient="right")),
-            tooltip=["Urgency", "Members"]
-        ).properties(height=280)
+                range=["#d45d5d", "#e8a838", "#5b8fb9"]
+            ), legend=alt.Legend(orient="bottom", title=None)),
+            tooltip=["Urgency", "Members", "Percentage"]
+        ).properties(height=70)
 
-        text = alt.Chart(urg_data).mark_text(radiusOffset=20, size=14, fontWeight="bold").encode(
-            theta=alt.Theta("Members:Q", stack=True),
-            text=alt.Text("Members:Q"),
-            color=alt.value("#333333")
-        )
-
-        st.altair_chart(chart + text, use_container_width=True)
+        st.altair_chart(chart, use_container_width=True)
 
         st.markdown("---")
         st.subheader("Priority Member List")
-        st.markdown("Sorted by urgency — Critical first. Click any row's expander below for full intervention details.")
+        st.markdown("Sorted by urgency — Critical first.")
 
-        # Clean table
         show = filtered[["MEMBER_ID", "worst_pdc", "therapies", "admission_count",
                          "total_hosp_cost", "urgency"]].copy()
         show.columns = ["Member", "PDC %", "Therapies", "Admissions", "Hosp. Cost ($)", "Urgency"]
