@@ -119,31 +119,41 @@ if view == "Population Overview":
 
     with col2:
         with st.container(border=True):
-            st.markdown("#### Polypharmacy Risk")
-            st.caption("Members on 2+ chronic drug classes face double the hospitalization rate")
+            st.markdown("#### Polypharmacy Pill Burden")
+            st.caption("Average adherence drops as members juggle more chronic medications — the well-known pill burden effect.")
 
-            multi = member[member["therapy_count"] >= 2]
-            single = member[member["therapy_count"] == 1]
-            poly_data = pd.DataFrame({
-                "Group": ["Single Therapy", "Multi-Therapy (2+)"],
-                "Hospitalization Rate": [
-                    round((single["admission_count"] > 0).mean() * 100, 1),
-                    round((multi["admission_count"] > 0).mean() * 100, 1)
-                ],
-                "Members": [len(single), len(multi)]
-            })
+            # Use average PDC by therapy_count (pill burden) — clearer clinical narrative
+            pdc_by_count = member.groupby("therapy_count").agg(
+                mean_pdc=("mean_pdc", "mean"),
+                members=("BENE_ID", "count"),
+            ).reset_index()
+            # PDC is stored 0-1 in dashboard_data; convert to %
+            if pdc_by_count["mean_pdc"].max() <= 1.5:
+                pdc_by_count["mean_pdc"] = pdc_by_count["mean_pdc"] * 100
+            pdc_by_count["mean_pdc"] = pdc_by_count["mean_pdc"].round(1)
+            pdc_by_count["Group"] = pdc_by_count["therapy_count"].apply(
+                lambda n: f"{n} condition" if n == 1 else f"{n} conditions"
+            )
 
-            chart = alt.Chart(poly_data).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=50).encode(
-                x=alt.X("Group:N", axis=alt.Axis(labelAngle=0, title=None)),
-                y=alt.Y("Hospitalization Rate:Q", title="% Hospitalized", scale=alt.Scale(domain=[0, 50])),
+            chart = alt.Chart(pdc_by_count).mark_bar(
+                cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=50
+            ).encode(
+                x=alt.X("Group:N", sort=list(pdc_by_count["Group"]),
+                        axis=alt.Axis(labelAngle=0, title=None)),
+                y=alt.Y("mean_pdc:Q", title="Average PDC (%)",
+                        scale=alt.Scale(domain=[0, 100])),
                 color=alt.Color("Group:N", scale=alt.Scale(
-                    domain=["Single Therapy", "Multi-Therapy (2+)"], range=POLY_COLORS
+                    range=["#6fa8c7", "#e8a838", "#e07a5f"]
                 ), legend=None),
-                tooltip=["Group", "Hospitalization Rate", "Members"]
+                tooltip=[
+                    alt.Tooltip("Group:N", title="Conditions"),
+                    alt.Tooltip("mean_pdc:Q", title="Avg PDC (%)", format=".1f"),
+                    alt.Tooltip("members:Q", title="Members", format=","),
+                ],
             ).properties(height=280)
 
-            text = chart.mark_text(dy=-12, size=16, fontWeight="bold").encode(
-                text=alt.Text("Hospitalization Rate:Q", format=".1f")
+            text = chart.mark_text(dy=-12, size=14, fontWeight="bold").encode(
+                text=alt.Text("mean_pdc:Q", format=".1f")
             )
 
             st.altair_chart(chart + text, use_container_width=True)
