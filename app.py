@@ -157,13 +157,13 @@ with tab1:
 
             # % labels on each arc
             labels = alt.Chart(tier_data).mark_text(
-                radius=130, size=12, fontWeight="bold", color="#111827"
+                radius=120, size=12, fontWeight="bold", color="#111827"
             ).encode(
                 theta=alt.Theta("Members:Q", stack=True),
                 text="PctLabel:N"
             )
 
-            chart = (pie + labels).properties(height=230).configure_view(strokeWidth=0)
+            chart = (pie + labels).properties(height=260, padding={"top": 15, "bottom": 15, "left": 15, "right": 15}).configure_view(strokeWidth=0)
             st.altair_chart(chart, use_container_width=True)
 
             st.caption(f"**{non_adh_pct}% of the cohort is non-adherent** "
