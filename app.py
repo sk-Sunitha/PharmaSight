@@ -23,7 +23,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── LOAD DATA ──
-#@st.cache_data
+# NOTE: no @st.cache_data — we want fresh reads every session so file updates show immediately
 def load_data():
     member = pd.read_csv("dashboard_data.csv")
     pdc = pd.read_csv("member_pdc_scores.csv")
@@ -441,8 +441,5 @@ elif view == "Intervention Queue":
                 if intv and intv != "nan":
                     st.markdown("**Recommended Actions:**")
                     for action in intv.split(" | "):
-
-
-                        #refresh
                         if action.strip():
                             st.markdown(f"- {action.strip()}")
