@@ -23,7 +23,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── LOAD DATA ──
-@st.cache_data
+#@st.cache_data
 def load_data():
     member = pd.read_csv("dashboard_data.csv")
     pdc = pd.read_csv("member_pdc_scores.csv")
