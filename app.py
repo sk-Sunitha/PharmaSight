@@ -119,41 +119,44 @@ if view == "Population Overview":
 
     with col2:
         with st.container(border=True):
-            st.markdown("#### Polypharmacy Pill Burden")
-            st.caption("Average adherence drops as members juggle more chronic medications — the well-known pill burden effect.")
+            st.markdown("#### Adherence vs Hospitalization Cost")
+            st.caption("Non-adherent members drive more than double the per-member hospitalization cost — the financial case for intervention.")
 
-            # Use average PDC by therapy_count (pill burden) — clearer clinical narrative
-            pdc_by_count = member.groupby("therapy_count").agg(
-                mean_pdc=("mean_pdc", "mean"),
+            # Split cohort by adherence status using min_pdc
+            m = member.copy()
+            # min_pdc stored 0-1 in dashboard_data; normalize
+            if m["min_pdc"].max() <= 1.5:
+                m["min_pdc"] = m["min_pdc"] * 100
+            m["adh_group"] = m["min_pdc"].apply(
+                lambda p: "Adherent (PDC ≥ 80%)" if p >= 80 else "Non-Adherent (PDC < 80%)"
+            )
+            adh_cost = m.groupby("adh_group").agg(
+                cost_per_member=("total_hosp_cost", "mean"),
                 members=("BENE_ID", "count"),
             ).reset_index()
-            # PDC is stored 0-1 in dashboard_data; convert to %
-            if pdc_by_count["mean_pdc"].max() <= 1.5:
-                pdc_by_count["mean_pdc"] = pdc_by_count["mean_pdc"] * 100
-            pdc_by_count["mean_pdc"] = pdc_by_count["mean_pdc"].round(1)
-            pdc_by_count["Group"] = pdc_by_count["therapy_count"].apply(
-                lambda n: f"{n} condition" if n == 1 else f"{n} conditions"
-            )
+            adh_cost["cost_per_member"] = adh_cost["cost_per_member"].round(0)
+            adh_cost["label"] = adh_cost["cost_per_member"].apply(lambda v: f"${v:,.0f}")
 
-            chart = alt.Chart(pdc_by_count).mark_bar(
-                cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=50
+            chart = alt.Chart(adh_cost).mark_bar(
+                cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=60
             ).encode(
-                x=alt.X("Group:N", sort=list(pdc_by_count["Group"]),
+                x=alt.X("adh_group:N",
+                        sort=["Adherent (PDC ≥ 80%)", "Non-Adherent (PDC < 80%)"],
                         axis=alt.Axis(labelAngle=0, title=None)),
-                y=alt.Y("mean_pdc:Q", title="Average PDC (%)",
-                        scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color("Group:N", scale=alt.Scale(
-                    range=["#6fa8c7", "#e8a838", "#e07a5f"]
+                y=alt.Y("cost_per_member:Q", title="Avg Hosp. Cost per Member ($)"),
+                color=alt.Color("adh_group:N", scale=alt.Scale(
+                    domain=["Adherent (PDC ≥ 80%)", "Non-Adherent (PDC < 80%)"],
+                    range=["#6fa8c7", "#e07a5f"]
                 ), legend=None),
                 tooltip=[
-                    alt.Tooltip("Group:N", title="Conditions"),
-                    alt.Tooltip("mean_pdc:Q", title="Avg PDC (%)", format=".1f"),
+                    alt.Tooltip("adh_group:N", title="Group"),
+                    alt.Tooltip("cost_per_member:Q", title="Cost/Member", format="$,.0f"),
                     alt.Tooltip("members:Q", title="Members", format=","),
                 ],
             ).properties(height=280)
 
-            text = chart.mark_text(dy=-12, size=14, fontWeight="bold").encode(
-                text=alt.Text("mean_pdc:Q", format=".1f")
+            text = chart.mark_text(dy=-12, size=14, fontWeight="bold", color="#333").encode(
+                text=alt.Text("label:N")
             )
 
             st.altair_chart(chart + text, use_container_width=True)
@@ -185,17 +188,33 @@ elif view == "Adherence Deep Dive":
             st.markdown("#### PDC Distribution")
             st.caption("Bimodal pattern — members are either highly adherent or severely non-adherent. Dashed line = 80% CMS threshold.")
 
+            # PDC is stored 0-100 in the CSV; guard against 0-1 just in case
             pdc_hist = pdc.copy()
-            pdc_hist["pdc_bin"] = pd.cut(pdc_hist["pdc"], bins=range(0, 105, 5), right=False)
-            pdc_hist["bin_label"] = pdc_hist["pdc_bin"].apply(lambda x: f"{int(x.left)}–{int(x.right)}%" if pd.notna(x) else "")
-            pdc_hist["bin_start"] = pdc_hist["pdc_bin"].apply(lambda x: int(x.left) if pd.notna(x) else 0)
-            bin_counts = pdc_hist.groupby(["bin_label", "bin_start"]).size().reset_index(name="count")
+            if pdc_hist["pdc"].max() <= 1.5:
+                pdc_hist["pdc"] = pdc_hist["pdc"] * 100
+            # Bucket into 5-point bins, but include 100
+            pdc_hist["pdc_bin"] = pd.cut(pdc_hist["pdc"],
+                                         bins=list(range(0, 105, 5)),
+                                         right=True, include_lowest=True)
+            pdc_hist["bin_label"] = pdc_hist["pdc_bin"].apply(
+                lambda x: f"{int(x.left)}–{int(x.right)}%" if pd.notna(x) else ""
+            )
+            pdc_hist["bin_start"] = pdc_hist["pdc_bin"].apply(
+                lambda x: int(x.left) if pd.notna(x) else 0
+            )
+            bin_counts = pdc_hist.groupby(["bin_label", "bin_start"], observed=True).size().reset_index(name="count")
 
-            bars = alt.Chart(bin_counts).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#5b8fb9").encode(
-                x=alt.X("bin_start:Q", title="PDC (%)", scale=alt.Scale(domain=[0, 100]),
+            bars = alt.Chart(bin_counts).mark_bar(
+                cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#5b8fb9"
+            ).encode(
+                x=alt.X("bin_start:Q", title="PDC (%)",
+                        scale=alt.Scale(domain=[0, 100]),
                         axis=alt.Axis(values=list(range(0, 101, 10)))),
                 y=alt.Y("count:Q", title="Members"),
-                tooltip=[alt.Tooltip("bin_label:N", title="PDC Range"), alt.Tooltip("count:Q", title="Members")]
+                tooltip=[
+                    alt.Tooltip("bin_label:N", title="PDC Range"),
+                    alt.Tooltip("count:Q", title="Members"),
+                ],
             ).properties(height=280)
 
             rule = alt.Chart(pd.DataFrame({"x": [80]})).mark_rule(
@@ -211,7 +230,7 @@ elif view == "Adherence Deep Dive":
     with col2:
         with st.container(border=True):
             st.markdown("#### Adherence Rate by Therapy Class")
-            st.caption("Mental Health and Respiratory under 16%. Diabetes at 41.6% is the highest-impact intervention opportunity.")
+            st.caption("Respiratory has the lowest adherence at 31.5%, followed by Diabetes at 38.5%. Cardiovascular leads at 49.1%, but all fall short of the 80% CMS threshold.")
 
             adh = pdc.groupby("therapy_class").agg(
                 adherent_pct=("pdc", lambda x: round((x >= 80).mean() * 100, 1)),
