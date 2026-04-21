@@ -441,5 +441,8 @@ elif view == "Intervention Queue":
                 if intv and intv != "nan":
                     st.markdown("**Recommended Actions:**")
                     for action in intv.split(" | "):
+
+
+                        #refresh
                         if action.strip():
                             st.markdown(f"- {action.strip()}")
