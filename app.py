@@ -119,47 +119,37 @@ if view == "Population Overview":
 
     with col2:
         with st.container(border=True):
-            st.markdown("#### Adherence vs Hospitalization Cost")
-            st.caption("Non-adherent members drive more than double the per-member hospitalization cost — the financial case for intervention.")
+            st.markdown("#### Adherence by Therapy Count")
+            st.caption("Members on more chronic medications get flagged into higher-risk tiers — this is where intervention volume will concentrate.")
 
-            # Split cohort by adherence status using min_pdc
+            # Show how members distribute across risk tiers by therapy count
             m = member.copy()
-            # min_pdc stored 0-1 in dashboard_data; normalize
-            if m["min_pdc"].max() <= 1.5:
-                m["min_pdc"] = m["min_pdc"] * 100
-            m["adh_group"] = m["min_pdc"].apply(
-                lambda p: "Adherent (PDC ≥ 80%)" if p >= 80 else "Non-Adherent (PDC < 80%)"
+            m["tc_group"] = m["therapy_count"].apply(
+                lambda n: "1 condition" if n == 1 else ("2 conditions" if n == 2 else "3 conditions")
             )
-            adh_cost = m.groupby("adh_group").agg(
-                cost_per_member=("total_hosp_cost", "mean"),
-                members=("BENE_ID", "count"),
-            ).reset_index()
-            adh_cost["cost_per_member"] = adh_cost["cost_per_member"].round(0)
-            adh_cost["label"] = adh_cost["cost_per_member"].apply(lambda v: f"${v:,.0f}")
+            # Stacked bar: therapy count on x-axis, stacked by risk_tier
+            counts = m.groupby(["tc_group", "risk_tier"]).size().reset_index(name="members")
+            counts["risk_tier"] = pd.Categorical(counts["risk_tier"], categories=["Low", "Medium", "High"], ordered=True)
 
-            chart = alt.Chart(adh_cost).mark_bar(
-                cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=60
-            ).encode(
-                x=alt.X("adh_group:N",
-                        sort=["Adherent (PDC ≥ 80%)", "Non-Adherent (PDC < 80%)"],
+            chart = alt.Chart(counts).mark_bar(size=50).encode(
+                x=alt.X("tc_group:N",
+                        sort=["1 condition", "2 conditions", "3 conditions"],
                         axis=alt.Axis(labelAngle=0, title=None)),
-                y=alt.Y("cost_per_member:Q", title="Avg Hosp. Cost per Member ($)"),
-                color=alt.Color("adh_group:N", scale=alt.Scale(
-                    domain=["Adherent (PDC ≥ 80%)", "Non-Adherent (PDC < 80%)"],
-                    range=["#6fa8c7", "#e07a5f"]
-                ), legend=None),
+                y=alt.Y("members:Q", title="Members", stack="zero"),
+                color=alt.Color("risk_tier:N",
+                                scale=alt.Scale(
+                                    domain=["Low", "Medium", "High"],
+                                    range=["#6fa8c7", "#e8a838", "#e07a5f"]
+                                ),
+                                legend=alt.Legend(title="Risk Tier", orient="bottom")),
                 tooltip=[
-                    alt.Tooltip("adh_group:N", title="Group"),
-                    alt.Tooltip("cost_per_member:Q", title="Cost/Member", format="$,.0f"),
+                    alt.Tooltip("tc_group:N", title="Therapy Count"),
+                    alt.Tooltip("risk_tier:N", title="Risk Tier"),
                     alt.Tooltip("members:Q", title="Members", format=","),
                 ],
             ).properties(height=280)
 
-            text = chart.mark_text(dy=-12, size=14, fontWeight="bold", color="#333").encode(
-                text=alt.Text("label:N")
-            )
-
-            st.altair_chart(chart + text, use_container_width=True)
+            st.altair_chart(chart, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════
 # VIEW 2: ADHERENCE DEEP DIVE
@@ -186,7 +176,7 @@ elif view == "Adherence Deep Dive":
     with col1:
         with st.container(border=True):
             st.markdown("#### PDC Distribution")
-            st.caption("Bimodal pattern — members are either highly adherent or severely non-adherent. Dashed line = 80% CMS threshold.")
+            st.caption("Bimodal pattern — a large cluster of members sit between 30-80% PDC (intervention opportunity), while ~890 are fully adherent at 95-100%. Dashed line = 80% CMS threshold.")
 
             # PDC is stored 0-100 in the CSV; guard against 0-1 just in case
             pdc_hist = pdc.copy()
@@ -204,13 +194,17 @@ elif view == "Adherence Deep Dive":
             )
             bin_counts = pdc_hist.groupby(["bin_label", "bin_start"], observed=True).size().reset_index(name="count")
 
+            # Auto-scale y-axis to fit the tallest bar (don't clip)
+            ymax = int(bin_counts["count"].max() * 1.15)
+
             bars = alt.Chart(bin_counts).mark_bar(
                 cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#5b8fb9"
             ).encode(
                 x=alt.X("bin_start:Q", title="PDC (%)",
                         scale=alt.Scale(domain=[0, 100]),
                         axis=alt.Axis(values=list(range(0, 101, 10)))),
-                y=alt.Y("count:Q", title="Members"),
+                y=alt.Y("count:Q", title="Members",
+                        scale=alt.Scale(domain=[0, ymax])),
                 tooltip=[
                     alt.Tooltip("bin_label:N", title="PDC Range"),
                     alt.Tooltip("count:Q", title="Members"),
