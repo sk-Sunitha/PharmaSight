@@ -2,6 +2,13 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import numpy as np
+import json
+import os
+
+# Inject Groq API key from Streamlit Secrets into environment
+# (agent.py reads it from os.environ)
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 
 st.set_page_config(page_title="PharmaSight Agent", layout="wide", page_icon="💊")
 
@@ -105,11 +112,12 @@ st.markdown('<p class="app-subtitle">Pharmacy claims-driven chronic disease risk
 # ══════════════════════════════════════════════════════════════
 # TOP NAVIGATION — native tabs (pill/segmented style via CSS)
 # ══════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Population Overview",
     "Adherence Deep Dive",
     "Risk & Cost Impact",
     "Intervention Queue",
+    "Agent",
 ])
 
 # ══════════════════════════════════════════════════════════════
@@ -157,13 +165,13 @@ with tab1:
 
             # % labels on each arc
             labels = alt.Chart(tier_data).mark_text(
-                radius=120, size=12, fontWeight="bold", color="#111827"
+                radius=130, size=12, fontWeight="bold", color="#111827"
             ).encode(
                 theta=alt.Theta("Members:Q", stack=True),
                 text="PctLabel:N"
             )
 
-            chart = (pie + labels).properties(height=260, padding={"top": 15, "bottom": 15, "left": 15, "right": 15}).configure_view(strokeWidth=0)
+            chart = (pie + labels).properties(height=230).configure_view(strokeWidth=0)
             st.altair_chart(chart, use_container_width=True)
 
             st.caption(f"**{non_adh_pct}% of the cohort is non-adherent** "
@@ -456,3 +464,136 @@ with tab4:
                     for action in intv.split(" | "):
                         if action.strip():
                             st.markdown(f"- {action.strip()}")
+
+# ══════════════════════════════════════════════════════════════
+# VIEW 5: AGENT
+# ══════════════════════════════════════════════════════════════
+with tab5:
+    # Lazy import — only loaded when the Agent tab is opened
+    from agent import get_priority_calls, get_member_brief, get_outreach_draft
+
+    st.markdown("#### PharmaSight Agent — grounded AI copilot for care managers")
+    st.caption(
+        "Three capabilities, one goal — compress the care manager's pre-call, call, and "
+        "post-call work. Every response is grounded in the pharmacy pipeline (no invented facts)."
+    )
+
+    # Check API key availability up front
+    if "GROQ_API_KEY" not in st.secrets:
+        st.error(
+            "Groq API key not configured. Add `GROQ_API_KEY = \"gsk_...\"` in "
+            "Streamlit Cloud → App Settings → Secrets, then reboot the app."
+        )
+        st.stop()
+
+    # Sub-navigation within the Agent tab
+    capability = st.radio(
+        "capability",
+        ["Today's Priority Calls", "Member Brief", "Outreach Drafter"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    st.markdown("")  # spacer
+
+    # Helper: render the agent's response + an optional tool trace expander
+    def _render_response(result: dict, trace_label: str = "See what the agent did"):
+        if result.get("error"):
+            st.error(f"Agent error: {result['error']}")
+            return
+        if not result.get("answer"):
+            st.warning("Agent returned no content. Try again.")
+            return
+        st.markdown(result["answer"])
+        if result.get("tool_calls"):
+            with st.expander(trace_label):
+                for i, call in enumerate(result["tool_calls"], 1):
+                    st.markdown(f"**Step {i} — called `{call['tool']}`**")
+                    st.code(f"args: {json.dumps(call['args'])}", language="json")
+                    # Show a truncated preview of the tool result
+                    result_str = call["result"]
+                    preview = result_str if len(result_str) < 2000 else result_str[:2000] + "\n... (truncated)"
+                    st.code(preview, language="json")
+
+    # ────────────────────────────────────────────────────────────
+    # CAPABILITY D — Today's Priority Calls
+    # ────────────────────────────────────────────────────────────
+    if capability == "Today's Priority Calls":
+        with st.container(border=True):
+            st.markdown("##### Rank members by urgency for today's call list")
+            st.caption(
+                "Agent uses urgency tier, worst PDC, and avoidable cost to rank. "
+                "Returns a prioritized list with reasoning for each entry."
+            )
+
+            n_calls = st.slider("How many calls?", min_value=3, max_value=20, value=10, step=1)
+
+            if st.button("Rank today's calls", type="primary"):
+                with st.spinner("Agent ranking priority calls..."):
+                    result = get_priority_calls(n_calls)
+                _render_response(result, "See what the agent did (tool trace)")
+
+    # ────────────────────────────────────────────────────────────
+    # CAPABILITY A — Member Brief
+    # ────────────────────────────────────────────────────────────
+    elif capability == "Member Brief":
+        with st.container(border=True):
+            st.markdown("##### Generate a 30-second pre-call brief for a specific member")
+            st.caption(
+                "Agent pulls the member's PDC, gap signals, hospitalizations, and PQA-approved "
+                "intervention recommendations. Every fact cites its source CSV."
+            )
+
+            # Build the member dropdown from the Intervention Queue
+            member_options = sorted(interventions["MEMBER_ID"].dropna().unique().tolist())
+            # Default to the first Critical member if available
+            crit = interventions[interventions["urgency"] == "Critical"]
+            default_id = crit["MEMBER_ID"].iloc[0] if len(crit) > 0 else member_options[0]
+            default_idx = member_options.index(default_id) if default_id in member_options else 0
+
+            sel_member = st.selectbox("Member", member_options, index=default_idx)
+
+            if st.button("Generate brief", type="primary"):
+                with st.spinner(f"Agent preparing brief for {sel_member}..."):
+                    result = get_member_brief(sel_member)
+                _render_response(result, "See what the agent did (tool trace)")
+
+    # ────────────────────────────────────────────────────────────
+    # CAPABILITY B — Outreach Drafter
+    # ────────────────────────────────────────────────────────────
+    elif capability == "Outreach Drafter":
+        with st.container(border=True):
+            st.markdown("##### Draft compliant outreach — SMS to member or note to provider")
+            st.caption(
+                "Agent returns compliance requirements first (TCPA for SMS, HIPAA for provider), "
+                "then produces the draft. Care manager reviews before sending."
+            )
+
+            member_options = sorted(interventions["MEMBER_ID"].dropna().unique().tolist())
+            crit = interventions[interventions["urgency"] == "Critical"]
+            default_id = crit["MEMBER_ID"].iloc[0] if len(crit) > 0 else member_options[0]
+            default_idx = member_options.index(default_id) if default_id in member_options else 0
+
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                sel_member_2 = st.selectbox("Member", member_options, index=default_idx, key="outreach_member")
+            with c2:
+                channel = st.radio(
+                    "Channel",
+                    ["SMS to member", "Note to provider"],
+                    label_visibility="visible",
+                )
+            channel_key = "sms" if channel == "SMS to member" else "provider"
+
+            if st.button("Draft outreach", type="primary"):
+                with st.spinner(f"Agent drafting {channel.lower()} for {sel_member_2}..."):
+                    result = get_outreach_draft(sel_member_2, channel_key)
+                _render_response(result, "See what the agent did (tool trace)")
+
+    # Footer — transparency note
+    st.markdown("---")
+    st.caption(
+        "Model: Llama-3.3-70B via Groq · Grounded by tool-calling on pharmacy claims pipeline · "
+        "No PHI — synthetic CMS SynPUF data · "
+        "Every response traces back to a specific CSV file."
+    )
