@@ -1,10 +1,10 @@
 # PharmaSight Agent
 
-**A pharmacy-informed AI agent for chronic disease care management.**
+**A pharmacy-informed AI Agent for chronic disease care management.**
 
 Live demo: [pharmasight-agent.streamlit.app](https://pharmasight-agent.streamlit.app/)
 
----
+\---
 
 ## What it is
 
@@ -16,7 +16,7 @@ It does three things that fit together:
 2. **Analytics dashboard** — four views that answer the questions a clinical program manager actually asks: how big is the adherence problem, where is it concentrated, what does it cost, and who should we contact first.
 3. **AI agent layer** — a grounded copilot with three tool-calling capabilities: priority call ranking, pre-call member briefs, and compliant outreach drafting. Not a chatbot — every output traces to a specific data row.
 
----
+\---
 
 ## Why this matters
 
@@ -26,7 +26,7 @@ The opportunity: if you can compress the context-gathering step and ground AI re
 
 This project demonstrates that I can identify that opportunity, build the pipeline that produces the signal, design the AI layer that acts on it, and quantify the ROI for a buyer.
 
----
+\---
 
 ## Architecture
 
@@ -34,7 +34,7 @@ This project demonstrates that I can identify that opportunity, build the pipeli
 ┌─────────────────────────────────────────────────────────────┐
 │  STREAMLIT UI — 5 tabs                                      │
 │  Population Overview · Adherence Deep Dive ·                │
-│  Risk & Cost Impact · Intervention Queue · Agent            │
+│  Risk \& Cost Impact · Intervention Queue · Agent            │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
@@ -47,8 +47,8 @@ This project demonstrates that I can identify that opportunity, build the pipeli
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  TOOLS LAYER (tools.py)                                     │
-│  rank_priority_calls() · get_member_brief() ·               │
-│  draft_outreach()                                           │
+│  rank\_priority\_calls() · get\_member\_brief() ·               │
+│  draft\_outreach()                                           │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
@@ -62,21 +62,21 @@ This project demonstrates that I can identify that opportunity, build the pipeli
 
 **Key design principle:** the system is data-source agnostic. The input is official synthetic healthcare claims published by CMS. Swap the input for real claims from any plan, and the same pipeline and agent produce the same structured outputs — the numbers change, the system doesn't.
 
----
+\---
 
 ## Data source
 
-Official synthetic claims data published by CMS (Centers for Medicare & Medicaid Services). The files used are public, research-ready, and contain no PHI. Specifically:
+Official synthetic claims data published by CMS (Centers for Medicare \& Medicaid Services). The files used are public, research-ready, and contain no PHI. Specifically:
 
-| File | What it contains |
-|---|---|
-| Beneficiary Summary | Member demographics, enrollment, chronic condition indicators |
-| Prescription Drug Event | Every pharmacy fill — NDC, date, days supplied, cost |
-| Inpatient | Every hospital admission — diagnosis, dates, claim payment amount |
+|File|What it contains|
+|-|-|
+|Beneficiary Summary|Member demographics, enrollment, chronic condition indicators|
+|Prescription Drug Event|Every pharmacy fill — NDC, date, days supplied, cost|
+|Inpatient|Every hospital admission — diagnosis, dates, claim payment amount|
 
 Synthetic data means the numbers are directional, not production-accurate. The methodology, pipeline, and agent design are production-grade.
 
----
+\---
 
 ## The analytics pipeline
 
@@ -92,100 +92,102 @@ Seven stages, each a standalone script so the pipeline is reproducible and audit
 
 Numbers at the end: 2,075 chronic members, 2,799 PDC scores, 1,256-member intervention queue.
 
----
+\---
 
 ## The dashboard
 
 Four views, each answering one executive-level question.
 
-| View | The question it answers |
-|---|---|
-| **Population Overview** | How big is the problem? How is risk distributed, and does it correlate with hospitalization? |
-| **Adherence Deep Dive** | Which therapy class has the worst adherence, and how does the PDC distribution look? |
-| **Risk & Cost Impact** | How much of the hospitalization spend is attached to non-adherent members? What's avoidable? |
-| **Intervention Queue** | Exactly which members need outreach this week, ranked by urgency, with recommended actions? |
+|View|The question it answers|
+|-|-|
+|**Population Overview**|How big is the problem? How is risk distributed, and does it correlate with hospitalization?|
+|**Adherence Deep Dive**|Which therapy class has the worst adherence, and how does the PDC distribution look?|
+|**Risk \& Cost Impact**|How much of the hospitalization spend is attached to non-adherent members? What's avoidable?|
+|**Intervention Queue**|Exactly which members need outreach this week, ranked by urgency, with recommended actions?|
 
 Design choices: bordered card containers for each chart, subtle color palette (no red-green-yellow glare), direct labels on bars and pie slices, dashed reference line for the 80% CMS adherence threshold, tooltips for deeper data on hover.
 
----
+\---
 
 ## The agent layer
 
 Three tool-calling capabilities, each mapping to a moment in a care manager's day.
 
-| Capability | Workflow moment | What the agent does |
-|---|---|---|
-| **Today's Priority Calls** | Before the day starts | Ranks the top N members by urgency + worst PDC + avoidable cost, with a one-line reason for each |
-| **Member Brief** | Before a specific call | 30-second grounded brief: PDC per therapy, gap signals, hospitalizations, PQA-approved interventions, avoidable cost |
-| **Outreach Drafter** | After the call | Compliance-aware draft: TCPA-compliant SMS to member, or structured clinical handoff to provider |
+|Capability|Workflow moment|What the agent does|
+|-|-|-|
+|**Today's Priority Calls**|Before the day starts|Ranks the top N members by urgency + worst PDC + avoidable cost, with a one-line reason for each|
+|**Member Brief**|Before a specific call|30-second grounded brief: PDC per therapy, gap signals, hospitalizations, PQA-approved interventions, avoidable cost|
+|**Outreach Drafter**|After the call|Compliance-aware draft: TCPA-compliant SMS to member, or structured clinical handoff to provider|
 
 **Why this qualifies as an agent, not a chatbot:**
 
-| Criterion | Implementation |
-|---|---|
-| Tool use | Calls one of three Python functions — `rank_priority_calls`, `get_member_brief`, `draft_outreach` |
-| Data grounding | Never answers from LLM training data; must call a tool and cite its output |
-| Multi-step reasoning | System prompt enforces structured output: diagnosis → root cause → actions → avoidable cost → sources |
-| Transparency | Every response is followed by a tool-trace expander showing exactly which tool was called, with what arguments, and what it returned |
+|Criterion|Implementation|
+|-|-|
+|Tool use|Calls one of three Python functions — `rank\_priority\_calls`, `get\_member\_brief`, `draft\_outreach`|
+|Data grounding|Never answers from LLM training data; must call a tool and cite its output|
+|Multi-step reasoning|System prompt enforces structured output: diagnosis → root cause → actions → avoidable cost → sources|
+|Transparency|Every response is followed by a tool-trace expander showing exactly which tool was called, with what arguments, and what it returned|
 
 Model: Llama-3.3-70B via Groq (free tier, OpenAI-compatible function calling, 400 tokens/sec).
 
----
+\---
 
 ## ROI framing
 
 The system addresses value in three layers — one buyer captures all three.
 
 **Layer 1 — Clinical and financial ROI**
-Avoidable hospitalization cost for non-adherent members in the cohort, calculated using PQA literature norms ($4,700/year Diabetes · $3,900 Cardiovascular · $2,700 Respiratory · $1,800 Mental Health). For this 2,075-member panel the addressable pool is ~$17.5M.
+Avoidable hospitalization cost for non-adherent members in the cohort, calculated using PQA literature norms ($4,700/year Diabetes · $3,900 Cardiovascular · $2,700 Respiratory · $1,800 Mental Health). For this 2,075-member panel the addressable pool is \~$17.5M.
 
 **Layer 2 — Operational ROI**
-Agent-assisted call prep saves ~6 minutes per call. A care manager doing 20 calls/day reclaims ~2 hours of capacity — roughly 25% of a fully loaded RN/pharmacist cost. Same headcount, 25% more coverage.
+Agent-assisted call prep saves \~6 minutes per call. A care manager doing 20 calls/day reclaims \~2 hours of capacity — roughly 25% of a fully loaded RN/pharmacist cost. Same headcount, 25% more coverage.
 
 **Layer 3 — Compliance and quality ROI**
 Better adherence flows directly into CMS quality measures. For plans operating under Star Ratings, triple-weighted adherence measures feed into bonus payments. The connection from pipeline output to quality bonus is mechanical, not speculative.
 
-Together these create a single pitch: one tool, three P&L lines, one buyer.
+Together these create a single pitch: one tool, three P\&L lines, one buyer.
 
----
+\---
 
 ## What this project is trying to prove
 
 This is a portfolio project, not a production system. The goal is to show that I can:
 
-- **See product opportunity** in messy, publicly available healthcare data
-- **Build the pipeline** that turns raw claims into decision-grade signal
-- **Design the AI layer** that acts on the signal — with grounding, tool use, and transparent reasoning
-- **Frame the ROI** in the language the buyer (health plan executive) speaks
+* **See product opportunity** in messy, publicly available healthcare data
+* **Build the pipeline** that turns raw claims into decision-grade signal
+* **Design the AI layer** that acts on the signal — with grounding, tool use, and transparent reasoning
+* **Frame the ROI** in the language the buyer (health plan executive) speaks
 
 None of the individual pieces are novel. The combination — pipeline + dashboard + agent, all in one coherent product story — is the point.
 
----
+**Design principle: use the simplest tool that solves the problem.** Therapy classification is an authoritative lookup, not ML. PDC is a regulated formula, not a model. Risk tiering is clinical decision logic, not prediction. The LLM earns its place only where the work is genuinely language synthesis — and even there, it's grounded in tool calls to eliminate hallucination. ML is scoped to the v2 roadmap, reserved for the probabilistic problems where it actually moves the business: non-adherence prediction and intervention-response modeling.
+
+\---
 
 ## What I'd build next
 
 Keeping v1 deliberately narrow. Clear v2 extensions:
 
-- **RAG over formularies and CMS measure specs** — let the agent reason over plan-specific drug lists and quality measure definitions
-- **Feedback loop** — care manager rates each agent output; use signal to improve prompts or fine-tune a smaller model
-- **Transcript intake** — paste a call recording, get an auto-drafted SOAP note and follow-up plan
-- **A/B test designer** — the agent proposes intervention experiments (outreach cadence, channel mix) and sizes expected lift
-- **Live claims integration** — swap synthetic data for a plan's live data feed; same pipeline, real numbers
+* **RAG over formularies and CMS measure specs** — let the agent reason over plan-specific drug lists and quality measure definitions
+* **Feedback loop** — care manager rates each agent output; use signal to improve prompts or fine-tune a smaller model
+* **Transcript intake** — paste a call recording, get an auto-drafted SOAP note and follow-up plan
+* **A/B test designer** — the agent proposes intervention experiments (outreach cadence, channel mix) and sizes expected lift
+* **Live claims integration** — swap synthetic data for a plan's live data feed; same pipeline, real numbers
 
----
+\---
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| Language | Python 3 |
-| Pipeline | pandas, RxNorm API, RxClass API (ATC mapping) |
-| Dashboard | Streamlit, Altair |
-| Agent | Groq (Llama-3.3-70B, OpenAI-compatible function calling) |
-| Hosting | Streamlit Community Cloud |
-| Source control | GitHub |
+|Layer|Technology|
+|-|-|
+|Language|Python 3|
+|Pipeline|pandas, RxNorm API, RxClass API (ATC mapping)|
+|Dashboard|Streamlit, Altair|
+|Agent|Groq (Llama-3.3-70B, OpenAI-compatible function calling)|
+|Hosting|Streamlit Community Cloud|
+|Source control|GitHub|
 
----
+\---
 
 ## Repo structure
 
@@ -196,21 +198,21 @@ PharmaSight/
 ├── tools.py                       # The 3 tools the agent can call
 ├── requirements.txt               # Python dependencies
 │
-├── step1_verify_ndc.py            # Pipeline: NDC verification via RxNorm
-├── step2_v2_parallel.py           # Pipeline: NDC → ATC therapy class (parallelized)
-├── step3_identify_chronic_members.py  # Pipeline: chronic cohort filter
-├── step4_pdc_real.py              # Pipeline: day-by-day PDC calculation
-├── step5_risk_cost.py             # Pipeline: risk tiering + cost attribution
-├── step6_interventions.py         # Pipeline: PQA-based intervention mapping
-├── step7_build_dashboard_data.py  # Pipeline: final denormalized CSVs
+├── step1\_verify\_ndc.py            # Pipeline: NDC verification via RxNorm
+├── step2\_v2\_parallel.py           # Pipeline: NDC → ATC therapy class (parallelized)
+├── step3\_identify\_chronic\_members.py  # Pipeline: chronic cohort filter
+├── step4\_pdc\_real.py              # Pipeline: day-by-day PDC calculation
+├── step5\_risk\_cost.py             # Pipeline: risk tiering + cost attribution
+├── step6\_interventions.py         # Pipeline: PQA-based intervention mapping
+├── step7\_build\_dashboard\_data.py  # Pipeline: final denormalized CSVs
 │
-├── dashboard_data.csv             # Member-level dashboard feed
-├── member_pdc_scores.csv          # PDC per member per therapy class
-├── intervention_recommendations.csv  # Prioritized intervention queue
-└── member_gap_analysis.csv        # Fill-gap signals per member
+├── dashboard\_data.csv             # Member-level dashboard feed
+├── member\_pdc\_scores.csv          # PDC per member per therapy class
+├── intervention\_recommendations.csv  # Prioritized intervention queue
+└── member\_gap\_analysis.csv        # Fill-gap signals per member
 ```
 
----
+\---
 
 ## Running locally
 
@@ -220,17 +222,18 @@ cd PharmaSight
 pip install -r requirements.txt
 
 # Set the Groq key — get one free at console.groq.com
-export GROQ_API_KEY="gsk_..."
+export GROQ\_API\_KEY="gsk\_..."
 
 streamlit run app.py
 ```
 
-For the deployed version, `GROQ_API_KEY` is stored in Streamlit Secrets.
+For the deployed version, `GROQ\_API\_KEY` is stored in Streamlit Secrets.
 
----
+\---
 
 ## About
 
 Built as an AI Product Management portfolio project — demonstrating end-to-end ownership from raw data ingestion through product framing.
 
 Repository: [github.com/sk-sunitha/PharmaSight](https://github.com/sk-sunitha/PharmaSight)
+
